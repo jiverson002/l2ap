@@ -373,9 +373,15 @@ void printCompileChoices();
 /* cmdline.c */
 void cmdline_parse(params_t *ctrl, int argc, char *argv[]);
 
-/* shim.c */
-int l2ap_pp(val_t minsim, char const *filename);
-int l2ap(val_t minsim, char const *filename);
+/* JI: shim.c */
+extern idx_t L2AP_ncand;
+extern idx_t L2AP_nmacs1;
+extern idx_t L2AP_nmacs2;
+extern idx_t L2AP_nprun;
+extern idx_t L2AP_nvdot;
+extern idx_t L2AP_nsims;
+int L2AP_pp(val_t minsim, char const *filename);
+int L2AP(val_t minsim, char const *filename);
 
 #ifdef __cplusplus
 }

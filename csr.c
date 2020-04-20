@@ -1111,17 +1111,20 @@ void da_csr_Write(da_csr_t *mat, char *filename, char format, char writevals, ch
 	} else
 		bind = (format == DA_FMT_BINCOL) ? (idx_t *)mat->colind : (idx_t *)ind;
 
-	if (writevals)
+	if (writevals) {
 		if (sizeof(val_t) != sizeof(float)){
 			bval = da_fmalloc(nnz, "da_csr_Write: bval");
-			if(format == DA_FMT_BINCOL)
+			if(format == DA_FMT_BINCOL) {
 				for(i=0; i < nnz; i++)
 					bval[i] = mat->colval[i];
-			else
+			} else {
 				for(i=0; i < nnz; i++)
 					bval[i] = mat->rowval[i];
-		} else
+			}
+		} else {
 			bval = (format == DA_FMT_BINCOL) ? (float*)mat->colval : (float*)val;
+		}
+	}
 
 	if (format == DA_FMT_BINAP) {
 		if (filename == NULL)

@@ -7,12 +7,19 @@
 
 #include "includes.h"
 
+idx_t L2AP_ncand  = 0;
+idx_t L2AP_nmacs1 = 0;
+idx_t L2AP_nmacs2 = 0;
+idx_t L2AP_nprun  = 0;
+idx_t L2AP_nvdot  = 0;
+idx_t L2AP_nsims  = 0;
+
 static params_t *params = NULL;
 
 /***********************************************/
 /*! This is the entry point for the program    */
 /***********************************************/
-int l2ap_pp(val_t minsim, char const *filename) {
+int L2AP_pp(val_t minsim, char const *filename) {
   if (!filename)
     return EXIT_SUCCESS;
 
@@ -64,12 +71,19 @@ int l2ap_pp(val_t minsim, char const *filename) {
   return 0;
 }
 
-int l2ap(val_t minsim, char const *filename) {
+int L2AP(val_t minsim, char const *filename) {
   if (!params)
-    (void)l2ap_pp(minsim, filename);
+    (void)L2AP_pp(minsim, filename);
 
   if (!filename)
     return 0;
+
+  L2AP_ncand  = 0;
+  L2AP_nmacs1 = 0;
+  L2AP_nmacs2 = 0;
+  L2AP_nprun  = 0;
+  L2AP_nvdot  = 0;
+  L2AP_nsims  = 0;
 
   switch(params->mode){
 
