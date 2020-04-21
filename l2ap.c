@@ -8,6 +8,7 @@
 #include "includes.h"
 
 // forward declarations
+void l2apFindNeighbors_free(params_t *params);
 idx_t l2apProcessCandidates(params_t *params, idx_t rid, da_csr_t *docs, val_t *lengths, val_t *sums,
     ptr_t *endptr, idx_t ncands, idx_t *cands, accum_t *accum,
     val_t *hashval, val_t *hashwgt, val_t *hashlen, val_t *hashsum, idx_t *hashsz, val_t *rwgts, val_t *rfiwgts,
@@ -19,20 +20,22 @@ void l2apFindMatches(idx_t rid, params_t *params, idx_t *cands,
     val_t *rwgts, val_t *rfiwgts, val_t *cwgts, val_t *criwgts, val_t *ps, ptr_t *endptr,
     val_t *hashval, val_t *hashwgt, val_t *hashlen, val_t *hashsum, idx_t *hashsz);
 
-/**
- * Main entry point to L2AP.
- */
-void l2apFindNeighbors(params_t *params){
+typedef struct {
+  int initd;
 
+  ptr_t *endptr;
+  idx_t *cands, *rsizes, *csizes, *rperm, *cperm, *hashsz;
+  val_t *rwgts, *rfiwgts, *hashwgt, *cwgts, *criwgts, *hashval, *hashlen,
+        *hashsum, *ps, *lengths, *sums;
+  da_invIdxJ_t *invIdx;
+} l2ap_scratch;
+
+static l2ap_scratch scratch = { .initd = 0 };
+
+void l2apFindNeighbors_init(params_t *params){
   ssize_t i, j, k, nnz;
-  idx_t nrows, ncols, mrlen, mclen, progressInd;
-  ptr_t *rowptr, *endptr;
-  idx_t *cands, *rsizes, *csizes, *rperm, *cperm, *hashsz = NULL;
-  val_t maxrval, myval;
-  val_t *rwgts = NULL, *rfiwgts = NULL, *hashwgt = NULL, *cwgts = NULL,
-      *criwgts = NULL, *hashval = NULL, *hashlen = NULL, *hashsum = NULL,
-      *ps = NULL, *lengths = NULL, *sums = NULL;
-  da_invIdxJ_t *invIdx = NULL; //alternative inverted index for value-driven similarities//
+  idx_t nrows, ncols, mrlen, mclen;
+  ptr_t *rowptr;
   da_csr_t *docs = params->docs;
 
   // allocate memory
@@ -40,72 +43,117 @@ void l2apFindNeighbors(params_t *params){
   nrows  = docs->nrows;   // num rows
   ncols  = docs->ncols;   // num cols
   params->simT2 = params->simT * params->simT;
-  progressInd = ceil(nrows/(float)20);
 
-  rsizes  = da_imalloc(nrows, "l2apFindNeighbors: rsizes");
-  csizes  = da_ismalloc(ncols, 0.0, "l2apFindNeighbors: csizes");
-  rperm   = da_imalloc(nrows, "l2apFindNeighbors: rperm");
-  cperm   = da_imalloc(ncols, "l2apFindNeighbors: cperm");
-  rwgts   = da_vsmalloc(nrows, 0.0, "l2apFindNeighbors: rwgts");
-  rfiwgts = da_vmalloc(nrows, "l2apFindNeighbors: rfiwgts");
-  cwgts   = da_vsmalloc(ncols, 0.0, "l2apFindNeighbors: cwgts");
+  scratch.rsizes  = da_imalloc(nrows, "l2apFindNeighbors: rsizes");
+  scratch.csizes  = da_ismalloc(ncols, 0.0, "l2apFindNeighbors: csizes");
+  scratch.rperm   = da_imalloc(nrows, "l2apFindNeighbors: rperm");
+  scratch.cperm   = da_imalloc(ncols, "l2apFindNeighbors: cperm");
+  scratch.rwgts   = da_vsmalloc(nrows, 0.0, "l2apFindNeighbors: rwgts");
+  scratch.rfiwgts = da_vmalloc(nrows, "l2apFindNeighbors: rfiwgts");
+  scratch.cwgts   = da_vsmalloc(ncols, 0.0, "l2apFindNeighbors: cwgts");
 #if defined(RS1) && defined(RS3)
-  criwgts = da_vsmalloc(ncols, 0.0, "l2apFindNeighbors: criwgts");
+  scratch.criwgts = da_vsmalloc(ncols, 0.0, "l2apFindNeighbors: criwgts");
 #endif
-  hashval = da_vsmalloc(ncols, 0, "l2apFindNeighbors: hashval");      // hash values of x
+  scratch.hashval = da_vsmalloc(ncols, 0, "l2apFindNeighbors: hashval");      // hash values of x
 #if defined(DP7) || defined(DP8)
-  hashsz  = da_imalloc(ncols, "l2apFindNeighbors: hashsz");
+  scratch.hashsz  = da_imalloc(ncols, "l2apFindNeighbors: hashsz");
 #endif
 #if defined(L2CV) || defined(LENCV)
-  hashlen = da_vsmalloc(ncols, 0, "l2apFindNeighbors: hashlen");      // hash suffix lengths of x
+  scratch.hashlen = da_vsmalloc(ncols, 0, "l2apFindNeighbors: hashlen");      // hash suffix lengths of x
 #endif
 #if defined(DP3) || defined(DP4)
-  hashsum = da_vsmalloc(ncols, 0, "l2apFindNeighbors: hashsum");      // hash suffix sums of x
+  scratch.hashsum = da_vsmalloc(ncols, 0, "l2apFindNeighbors: hashsum");      // hash suffix sums of x
 #endif
 #if defined(DP2) || defined(DP4) || defined(DP6) || defined(DP8)
-  hashwgt = da_vmalloc(ncols, "l2apFindNeighbors: hashwgt");
+  scratch.hashwgt = da_vmalloc(ncols, "l2apFindNeighbors: hashwgt");
 #endif
 #ifdef PSCV
-  ps      = da_vmalloc(nrows, "l2ap2FindNeighbors: ps");        // score prior to indexing threshold for each row
+  scratch.ps      = da_vmalloc(nrows, "l2ap2FindNeighbors: ps");        // score prior to indexing threshold for each row
 #endif
 
   // reorder matrix
-  l2apReorderDocs(params, &docs, rsizes, csizes, rwgts, cwgts, rperm, cperm);
+  l2apReorderDocs(params, &docs, scratch.rsizes, scratch.csizes, scratch.rwgts,
+      scratch.cwgts, scratch.rperm, scratch.cperm);
 
   nnz    = docs->rowptr[nrows]; // nnz in docs
   rowptr = docs->rowptr; // index in rowind/rowval where each row starts
 
   // allocate memory for candidates and the inverted indexes -- needs nnz & col counts
-  cands  = da_imalloc(nrows, "l2apFindNeighbors: candidates");
+  scratch.cands  = da_imalloc(nrows, "l2apFindNeighbors: candidates");
 #if defined(DP1) || defined(DP2) || defined(DP3) || defined(DP4)
-  sums    = da_vsmalloc(nnz, 0.0, "l2apFindNeighbors: sums");      // keep track of suffix sums
+  scratch.sums    = da_vsmalloc(nnz, 0.0, "l2apFindNeighbors: sums");      // keep track of suffix sums
 #endif
-  lengths = da_vsmalloc(nnz, 0.0, "l2apFindNeighbors: lengths");   // keep track of suffix lengths
-  endptr = da_pmalloc(nrows, "l2apFindNeighbors: endptr");
-  invIdx = gk_malloc(sizeof(da_invIdxJ_t), "l2apFindNeighbors: invIdx");
-  invIdx->ids    = da_ismalloc(nnz, 0, "l2apFindNeighbors: invIdx->ids");
-  invIdx->vals   = da_vsmalloc(nnz, 0.0, "l2apFindNeighbors: invIdx->ids");
-  invIdx->lens   = da_vsmalloc(nnz, 0.0, "l2apFindNeighbors: invIdx->ids");
-  invIdx->starts = da_pmalloc(ncols, "l2apFindNeighbors: invIdx->starts");
-  invIdx->ends   = da_pmalloc(ncols, "l2apFindNeighbors: invIdx->ends");
+  scratch.lengths = da_vsmalloc(nnz, 0.0, "l2apFindNeighbors: lengths");   // keep track of suffix lengths
+  scratch.endptr = da_pmalloc(nrows, "l2apFindNeighbors: endptr");
+  scratch.invIdx = gk_malloc(sizeof(da_invIdxJ_t), "l2apFindNeighbors: invIdx");
+  scratch.invIdx->ids    = da_ismalloc(nnz, 0, "l2apFindNeighbors: invIdx->ids");
+  scratch.invIdx->vals   = da_vsmalloc(nnz, 0.0, "l2apFindNeighbors: invIdx->ids");
+  scratch.invIdx->lens   = da_vsmalloc(nnz, 0.0, "l2apFindNeighbors: invIdx->ids");
+  scratch.invIdx->starts = da_pmalloc(ncols, "l2apFindNeighbors: invIdx->starts");
+  scratch.invIdx->ends   = da_pmalloc(ncols, "l2apFindNeighbors: invIdx->ends");
   for(j=0, k=0; j < ncols; j++){
-    invIdx->starts[j] = invIdx->ends[j] = k;
-    k += csizes[j];
+    scratch.invIdx->starts[j] = scratch.invIdx->ends[j] = k;
+    k += scratch.csizes[j];
   }
-  invIdx->accum = gk_malloc(nrows*sizeof(accum_t), "l2apFindNeighbors: invIdx->accum");
+  scratch.invIdx->accum = gk_malloc(nrows*sizeof(accum_t), "l2apFindNeighbors: invIdx->accum");
   for(i=0; i < nrows; i++)
-    invIdx->accum[i] = -1;
+    scratch.invIdx->accum[i] = -1;
 
 #ifdef EXTRACOUNTS
   // find the average length of rows & columns
-  mrlen = ceil(da_isum(nrows, rsizes, 1) / (val_t) nrows);
-  mclen = ceil(da_isum(ncols, csizes, 1) / (val_t) ncols);
+  mrlen = ceil(da_isum(nrows, scratch.rsizes, 1) / (val_t) nrows);
+  mclen = ceil(da_isum(ncols, scratch.csizes, 1) / (val_t) ncols);
   if(params->verbosity > 0)
     printf("mrlen: %d, mclen: %d.\n", mrlen, mclen);
 #endif
 
   if(params->verbosity > 0)
     printCompileChoices();
+
+  scratch.initd = 1;
+}
+
+/**
+ * Main entry point to L2AP.
+ */
+void l2apFindNeighbors(params_t *params){
+  int uninit = !scratch.initd;
+  if (uninit)
+    l2apFindNeighbors_init(params);
+
+  ssize_t i, j, k;
+  idx_t nrows, ncols, progressInd;
+  ptr_t *rowptr, *endptr;
+  idx_t *cands, *rsizes, *csizes, *rperm, *cperm, *hashsz;
+  val_t *rwgts, *rfiwgts, *hashwgt, *cwgts, *criwgts, *hashval, *hashlen,
+        *hashsum, *ps, *lengths, *sums;
+  da_invIdxJ_t *invIdx;
+
+  da_csr_t *docs = params->docs;
+  nrows  = docs->nrows;   // num rows
+  ncols  = docs->ncols;   // num cols
+  progressInd = ceil(nrows/(float)20);
+
+  rowptr  = docs->rowptr;
+  endptr  = scratch.endptr;
+  cands   = scratch.cands;
+  rsizes  = scratch.rsizes;
+  csizes  = scratch.csizes;
+  rperm   = scratch.rperm;
+  cperm   = scratch.cperm;
+  hashsz  = scratch.hashsz;
+  rwgts   = scratch.rwgts;
+  rfiwgts = scratch.rfiwgts;
+  hashwgt = scratch.hashwgt;
+  cwgts   = scratch.cwgts;
+  criwgts = scratch.criwgts;
+  hashval = scratch.hashval;
+  hashlen = scratch.hashlen;
+  hashsum = scratch.hashsum;
+  ps      = scratch.ps;
+  lengths = scratch.lengths;
+  sums    = scratch.sums;
+  invIdx  = scratch.invIdx;
 
   // for each x \in V do
   gk_startwctimer(params->timer_3); // find neighbors time
@@ -139,14 +187,27 @@ void l2apFindNeighbors(params_t *params){
 #endif
   gk_stopwctimer(params->timer_3); // find neighbors time
 
-  simSearchFinalize(params);
-  gk_free((void**)&rsizes, &csizes, &rwgts, &rfiwgts, &cwgts, &criwgts,
-      &cands, &endptr, &hashval, &hashwgt, &hashlen, &hashsum, &hashsz,
-      &lengths, &sums, &ps,
-      &invIdx->ids, &invIdx->vals, &invIdx->ends, &invIdx->starts,
-      &invIdx->accum, &invIdx->lens, &invIdx, LTERM);
-
+  if (uninit)
+    l2apFindNeighbors_free(params);
 }
+
+void l2apFindNeighbors_free(params_t *params){
+  if (!scratch.initd)
+    return;
+
+  simSearchFinalize(params);
+  gk_free((void**)&scratch.rsizes, &scratch.csizes, &scratch.rwgts,
+      &scratch.rfiwgts, &scratch.cwgts, &scratch.criwgts,
+      &scratch.cands, &scratch.endptr, &scratch.hashval, &scratch.hashwgt,
+      &scratch.hashlen, &scratch.hashsum, &scratch.hashsz,
+      &scratch.lengths, &scratch.sums, &scratch.ps,
+      &scratch.invIdx->ids, &scratch.invIdx->vals, &scratch.invIdx->ends,
+      &scratch.invIdx->starts,
+      &scratch.invIdx->accum, &scratch.invIdx->lens, &scratch.invIdx, LTERM);
+
+  scratch.initd = 0;
+}
+
 
 /**
  * Index part of the vector after its search is complete

@@ -380,8 +380,12 @@ extern idx_t L2AP_nmacs2;
 extern idx_t L2AP_nprun;
 extern idx_t L2AP_nvdot;
 extern idx_t L2AP_nsims;
-int L2AP_pp(val_t minsim, char const *filename);
-int L2AP(val_t minsim, char const *filename);
+void l2apFindNeighbors_init(params_t *params);
+void l2apFindNeighbors_free(params_t *params);
+int L2AP_set_up(val_t minsim, char const *filename);
+int L2AP(void);
+int L2AP_pp(void);
+int L2AP_tear_down(void);
 
 #ifdef __cplusplus
 }

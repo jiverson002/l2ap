@@ -19,7 +19,7 @@ static params_t *params = NULL;
 /***********************************************/
 /*! This is the entry point for the program    */
 /***********************************************/
-int L2AP_pp(val_t minsim, char const *filename) {
+int L2AP_set_up(val_t minsim, char const *filename) {
   if (!filename)
     return EXIT_SUCCESS;
 
@@ -38,7 +38,7 @@ int L2AP_pp(val_t minsim, char const *filename) {
     "-norm=2",
     "-verb=0",
     "l2ap",
-    filename,
+    (char*)filename,
     "none"
   };
 
@@ -71,13 +71,7 @@ int L2AP_pp(val_t minsim, char const *filename) {
   return 0;
 }
 
-int L2AP(val_t minsim, char const *filename) {
-  if (!params)
-    (void)L2AP_pp(minsim, filename);
-
-  if (!filename)
-    return 0;
-
+int L2AP(void) {
   L2AP_ncand  = 0;
   L2AP_nmacs1 = 0;
   L2AP_nmacs2 = 0;
@@ -186,8 +180,35 @@ int L2AP(val_t minsim, char const *filename) {
         "********************************************************************************\n");
   }
 
+  return 0;
+}
+
+int L2AP_pp(void) {
+  switch(params->mode){
+
+    case MODE_L2AP:
+            if(params->sim == DA_SIM_COS){
+                l2apFindNeighbors_init(params);
+            }
+        break;
+  }
+
+  return 0;
+}
+
+int L2AP_tear_down(void) {
+  switch(params->mode){
+
+    case MODE_L2AP:
+            if(params->sim == DA_SIM_COS){
+                l2apFindNeighbors_free(params);
+            }
+        break;
+  }
+
   freeParams(&params);
   params = NULL;
+
   return 0;
 }
 
