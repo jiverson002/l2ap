@@ -1883,7 +1883,7 @@ void da_csr_CompactRows(da_csr_t *mat)
 			j++;
 	}
 
-	rowptr[j+1] = rowptr[nrows];
+	rowptr[j] = rowptr[nrows];
 	mat->nrows = j;
 	mat->rowptr = da_prealloc(mat->rowptr, j+1, "da_csr_CompactRows: mat->rowptr realloc");
 }
