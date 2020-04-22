@@ -33,7 +33,9 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+#ifdef _OPENMP
 #include <omp.h>
+#endif
 
 /* include GKLib */
 #include "GKlib.h"
