@@ -29,10 +29,11 @@ int L2AP_set_up(val_t minsim, char const *filename) {
 
   snprintf(buf, 100, "-t=%f", minsim);
 
-  int argc = 9;
+  int argc = 10;
   char *argv[] = {
     "apss",
     buf,
+    "-nim",
     "--compactCols",
     "--compactRows",
     "-norm=2",
